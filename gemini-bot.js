@@ -1,3 +1,4 @@
+import http from "http";
 import readline from "readline";
 import fs from "fs";
 import path from "path";
@@ -238,8 +239,45 @@ async function chat(userMessage, history, mode) {
     0.7,
     true
   );
-  return { reply: result, model };
+  return { reply: result, model   };
 }
+const server = http.createServer(async (req, res) => {
+  if (req.method === "OPTIONS") {
+    res.writeHead(200, { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type" });
+    res.end();
+    return;
+  }
+  if (req.method === "GET" && req.url === "/") {
+    const html = fs.readFileSync(new URL("./index.html", import.meta.url));
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end(html);
+    return;
+  }
+  if (req.method === "POST" && req.url === "/chat") {
+    let body = "";
+    req.on("data", d => body += d);
+    req.on("end", async () => {
+      try {
+        const { message, mode: m } = JSON.parse(body);
+        const history = loadHistory();
+        const { reply } = await chat(message, history, m ?? "search");
+        history.push({ role: "user",  parts: [{ text: message }] });
+        history.push({ role: "model", parts: [{ text: reply }] });
+        saveHistory(history);
+        res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+        res.end(JSON.stringify({ reply }));
+      } catch (e) {
+        res.writeHead(500, { "Access-Control-Allow-Origin": "*" });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+  res.writeHead(404);
+  res.end();
+});
+
+server.listen(2458, () => console.log("ui: http://localhost:2458"));
 
 async function main() {
   const history  = loadHistory();
